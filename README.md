@@ -8,7 +8,7 @@ An order may start with no products. Products can be attached later using a sepa
 
 - Go 1.23 or later
 - PostgreSQL 13 or later
-
+ (Work 4 myself!)
 ## Configure and run
 
 Set the connection string and independent, random credentials in PowerShell:
@@ -33,9 +33,17 @@ go run ./cmd/api
 
 The API listens on `:8080` by default; override it with `HTTP_ADDR`. Every response includes `X-Correlation-ID`. Supply a valid `X-Correlation-ID` request header to keep an existing trace identifier; otherwise one is generated.
 
+For frontend request logs, open the browser developer tools Console. API calls show the route, method, status, duration, and correlation ID; request bodies and keys are not logged. The API also writes structured request logs to its terminal, using route templates rather than identifying path values.
+
+In the admin party form, enter comma-separated party aliases. Select a party in the list to edit its profile and aliases. Saving replaces the alias list; each alias must identify only one party.
+
+The API console supplies an editable JSON template for each partner POST endpoint and lists required and optional fields. The order timestamp is prefilled with the current time; change it to the event's actual time. Products may be omitted or empty when creating an order, but adding products requires at least one product. Resources may be omitted or empty. See [the partner API guide](docs/partner-api.md) for complete examples and amount rules.
+
 ## Partner API
 
-Authenticate with `Authorization: Bearer <PARTNER_API_KEY>`.
+Authenticate with `Authorization: Bearer <partner API key>`. Keys generated when creating a partner in the admin screen authenticate as that partner. The configured `PARTNER_API_KEY` and `PARTNER_ID` continue to work as a local fallback.
+
+The admin API currently has no authentication and exposes partner keys. Run this prototype only in a trusted local environment; do not expose it to untrusted networks or use real personal data.
 
 `POST /partner/v1/orders` creates an order. `products` may be omitted or empty:
 
@@ -43,6 +51,9 @@ Authenticate with `Authorization: Bearer <PARTNER_API_KEY>`.
 {
   "order_ref": "pos-847293",
   "occurred_at": "2026-11-21T14:00:00Z",
+  "currency": "SEK",
+  "total_amount": 125.00,
+  "vat_amount": 25.00,
   "buyer": { "external_id": "buyer-42", "type": "PERSON" },
   "seller": { "external_id": "store-7", "type": "ORGANIZATION" },
   "products": []
@@ -68,4 +79,4 @@ Database-backed concurrency, migration, ownership-history, and idempotency tests
 
 ## Current scope and next steps
 
-This is an API foundation, not the complete application, and is not ready for production or real personal data. It does not yet include a browser UI, multi-partner credential management, owner/product read APIs, ownership transfer, resolver execution, webhook delivery, OAuth/OIDC, or deployment TLS. See the architecture decisions under `docs/adr/`.
+This is a demo API and browser UI, not a complete application, and is not ready for production or real personal data. It does not yet include authenticated admin or party access, ownership transfer, resolver execution, webhook delivery, OAuth/OIDC, or deployment TLS. See the architecture decisions under `docs/adr/`.

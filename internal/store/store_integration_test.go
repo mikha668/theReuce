@@ -261,6 +261,8 @@ func TestProductIdentitySurvivesOwnershipChange(t *testing.T) {
 
 func decodeTestOrder(t *testing.T, body string) (orders.Request, [32]byte) {
 	t.Helper()
+	body = strings.Replace(body, `"order_ref":`, `"currency":"SEK","total_amount":100,"vat_amount":20,"order_ref":`, 1)
+	body = strings.ReplaceAll(body, `"identifiers":`, `"total_amount":10,"vat_amount":2,"identifiers":`)
 	request, hash, err := orders.DecodeRequest([]byte(body))
 	if err != nil {
 		t.Fatalf("decode test order: %v", err)
@@ -270,6 +272,7 @@ func decodeTestOrder(t *testing.T, body string) (orders.Request, [32]byte) {
 
 func decodeTestProducts(t *testing.T, body string) ([]orders.Product, [32]byte) {
 	t.Helper()
+	body = strings.ReplaceAll(body, `"identifiers":`, `"total_amount":10,"vat_amount":2,"identifiers":`)
 	_, products, hash, err := orders.DecodeProductAddition([]byte(body))
 	if err != nil {
 		t.Fatalf("decode test product addition: %v", err)

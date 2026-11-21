@@ -14,9 +14,11 @@ import (
 )
 
 var (
-	ErrIdempotencyConflict = errors.New("idempotency reference already exists with different content")
-	ErrIdentifierConflict  = errors.New("product identifier is already linked to a different product")
-	ErrOrderNotFound       = errors.New("order not found")
+	ErrIdempotencyConflict   = errors.New("idempotency reference already exists with different content")
+	ErrIdentifierConflict    = errors.New("product identifier is already linked to a different product")
+	ErrOrderNotFound         = errors.New("order not found")
+	ErrInvalidAmounts        = errors.New("invalid amounts")
+	ErrProductAlreadyOnOrder = errors.New("product is already attached to this order")
 )
 
 type Store struct {
@@ -59,6 +61,9 @@ func (s *Store) CreateOrder(ctx context.Context, partnerID string, request order
 	if !errors.Is(err, sql.ErrNoRows) {
 		return orders.Response{}, fmt.Errorf("read existing purchase event: %w", err)
 	}
+	if err := orders.ValidateNewOrderAmounts(request); err != nil {
+		return orders.Response{}, fmt.Errorf("%w: %v", ErrInvalidAmounts, err)
+	}
 
 	buyerID, err := s.upsertParty(ctx, tx, partnerID, request.Buyer)
 	if err != nil {
@@ -72,11 +77,12 @@ func (s *Store) CreateOrder(ctx context.Context, partnerID string, request order
 	var insertedID string
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO purchase_events
-			(partner_id, order_ref, buyer_party_id, seller_party_id, occurred_at, payload_hash, correlation_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+			(partner_id, order_ref, buyer_party_id, seller_party_id, occurred_at, payload_hash, correlation_id, currency, total_amount, vat_amount)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (partner_id, order_ref) DO NOTHING
 		RETURNING id`,
 		partnerID, request.OrderRef, buyerID, sellerID, request.OccurredAt, requestHash[:], correlationID,
+		request.Currency, request.TotalAmount, request.VATAmount,
 	).Scan(&insertedID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return orders.Response{}, fmt.Errorf("insert purchase event: %w", err)
@@ -149,10 +155,11 @@ func (s *Store) AddProducts(ctx context.Context, partnerID, orderRef, eventRef s
 	defer tx.Rollback()
 
 	var eventID, buyerID string
+	var total, vat sql.NullString
 	if err := tx.QueryRowContext(ctx, `
-		SELECT id, buyer_party_id FROM purchase_events
+		SELECT id, buyer_party_id, total_amount::text, vat_amount::text FROM purchase_events
 		WHERE partner_id = $1 AND order_ref = $2
-		FOR UPDATE`, partnerID, orderRef).Scan(&eventID, &buyerID); err != nil {
+		FOR UPDATE`, partnerID, orderRef).Scan(&eventID, &buyerID, &total, &vat); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return orders.Response{}, ErrOrderNotFound
 		}
@@ -190,6 +197,19 @@ func (s *Store) AddProducts(ctx context.Context, partnerID, orderRef, eventRef s
 			return orders.Response{}, fmt.Errorf("decode saved product addition response: %w", err)
 		}
 		return response, nil
+	}
+
+	if total.Valid {
+		var existingTotal, existingVAT string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(total_amount), 0)::text, COALESCE(SUM(vat_amount), 0)::text
+			FROM purchase_products WHERE purchase_event_id = $1`, eventID).Scan(&existingTotal, &existingVAT); err != nil {
+			return orders.Response{}, fmt.Errorf("read purchase product amounts: %w", err)
+		}
+		orderTotal, orderVAT := orders.Amount(total.String), orders.Amount(vat.String)
+		if err := orders.ValidateProductTotals(&orderTotal, &orderVAT, products, existingTotal, existingVAT); err != nil {
+			return orders.Response{}, fmt.Errorf("%w: %v", ErrInvalidAmounts, err)
+		}
 	}
 
 	response := orders.Response{
@@ -297,12 +317,20 @@ func (s *Store) addProduct(ctx context.Context, tx *sql.Tx, partnerID, purchaseE
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO purchase_products (purchase_event_id, product_instance_id)
-		VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-		purchaseEventID, productID,
-	); err != nil {
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO purchase_products (purchase_event_id, product_instance_id, total_amount, vat_amount)
+		VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+		purchaseEventID, productID, product.TotalAmount, product.VATAmount,
+	)
+	if err != nil {
 		return "", fmt.Errorf("link product to purchase: %w", err)
+	}
+	linked, err := result.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("check purchase product link: %w", err)
+	}
+	if linked == 0 && product.TotalAmount != nil {
+		return "", ErrProductAlreadyOnOrder
 	}
 	var lockedProductID string
 	if err := tx.QueryRowContext(ctx, `

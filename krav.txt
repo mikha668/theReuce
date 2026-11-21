@@ -48,10 +48,14 @@ Krav finns även i dokumenten Kravspecifikation_Digitalt_Produkt_och_Aganderegis
 
 
 
-GUI.
-Admin, översikt, skapa partners, generera en id-nyckel, skapa party 
-party login, see my purchases and products (product is main focus) purchase is connected to product
-swagger or similrar, to post event to partner api.
+GUI. gör ui med två filkar för demobruk
+1. Admin, översikt, skapa partners, generera en id-nyckel, skapa party dvs en person/företag
+party, ska han id, namn, kan ha alias m.m.  ingen fast koppling till en partner
+
+2. party login (i en rulllist välj vem som ska visas)
+see my purchases and products (product is main focus) purchase is connected to product
+3. swagger functinality, show existing api-endpoint, show what values needs to be filled inflr the apirequest. autopop key from partner databas
+
 
 
 

@@ -42,14 +42,19 @@ type Product struct {
 	Model        string       `json:"model,omitempty"`
 	Identifiers  []Identifier `json:"identifiers"`
 	Resources    []Resource   `json:"resources,omitempty"`
+	TotalAmount  *Amount      `json:"total_amount,omitempty"`
+	VATAmount    *Amount      `json:"vat_amount,omitempty"`
 }
 
 type Request struct {
-	OrderRef   string    `json:"order_ref"`
-	OccurredAt time.Time `json:"occurred_at"`
-	Buyer      Party     `json:"buyer"`
-	Seller     Party     `json:"seller"`
-	Products   []Product `json:"products"`
+	OrderRef    string    `json:"order_ref"`
+	OccurredAt  time.Time `json:"occurred_at"`
+	Buyer       Party     `json:"buyer"`
+	Seller      Party     `json:"seller"`
+	Products    []Product `json:"products"`
+	Currency    string    `json:"currency,omitempty"`
+	TotalAmount *Amount   `json:"total_amount,omitempty"`
+	VATAmount   *Amount   `json:"vat_amount,omitempty"`
 }
 
 type ProductResult struct {
@@ -70,6 +75,7 @@ func NormalizeAndValidate(request Request) (Request, [32]byte, error) {
 	request.Buyer.Type = strings.ToUpper(strings.TrimSpace(request.Buyer.Type))
 	request.Seller.ExternalID = strings.TrimSpace(request.Seller.ExternalID)
 	request.Seller.Type = strings.ToUpper(strings.TrimSpace(request.Seller.Type))
+	request.Currency = strings.ToUpper(strings.TrimSpace(request.Currency))
 
 	if request.OrderRef == "" || len(request.OrderRef) > 200 {
 		return Request{}, [32]byte{}, errors.New("order_ref must contain 1 to 200 characters")
@@ -88,6 +94,11 @@ func NormalizeAndValidate(request Request) (Request, [32]byte, error) {
 		return Request{}, [32]byte{}, err
 	}
 	request.Products = products
+	if request.Currency != "" || request.TotalAmount != nil || request.VATAmount != nil {
+		if err := ValidateNewOrderAmounts(request); err != nil {
+			return Request{}, [32]byte{}, err
+		}
+	}
 
 	encoded, err := json.Marshal(request)
 	if err != nil {
@@ -107,6 +118,15 @@ func NormalizeProducts(products []Product, allowEmpty bool) ([]Product, error) {
 		product := &products[i]
 		product.Manufacturer = strings.TrimSpace(product.Manufacturer)
 		product.Model = strings.TrimSpace(product.Model)
+		if (product.TotalAmount == nil) != (product.VATAmount == nil) {
+			return nil, fmt.Errorf("products[%d].total_amount and vat_amount must be supplied together", i)
+		}
+		if product.TotalAmount != nil && (!amountPattern.MatchString(string(*product.TotalAmount)) || !amountPattern.MatchString(string(*product.VATAmount))) {
+			return nil, fmt.Errorf("products[%d] contains an invalid amount", i)
+		}
+		if product.TotalAmount != nil && amountValue(product.VATAmount).Cmp(amountValue(product.TotalAmount)) > 0 {
+			return nil, fmt.Errorf("products[%d].vat_amount must not exceed total_amount", i)
+		}
 		if len(product.Identifiers) == 0 {
 			return nil, fmt.Errorf("products[%d] must have at least one identifier", i)
 		}

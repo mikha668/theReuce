@@ -43,7 +43,7 @@ func main() {
 		logger.Error("PARTY_ID_HMAC_KEY must contain at least 32 bytes")
 		os.Exit(1)
 	}
-	handler := httpapi.NewServer(db, store.New(db, partyIdentityKey), apiKey, partnerID, logger)
+	handler := httpapi.NewServer(db, store.New(db, partyIdentityKey), apiKey, partnerID, logger, partyIdentityKey)
 
 	server := &http.Server{
 		Addr:              envOr("HTTP_ADDR", ":8080"),

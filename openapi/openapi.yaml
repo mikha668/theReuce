@@ -38,7 +38,9 @@ paths:
       description: >
         Repeating a partner order_ref with equivalent content returns the original
         response. Reusing it with different content returns 409. An order may have
-        zero products; attach products later with a separate event_ref.
+        zero products; attach products later with a separate event_ref. Product
+        amounts may be partial but cannot exceed the order's total, VAT, or
+        total excluding VAT.
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
       requestBody:
@@ -188,8 +190,14 @@ components:
     Product:
       type: object
       additionalProperties: false
-      required: [identifiers]
+      required: [identifiers, total_amount, vat_amount]
       properties:
+        total_amount:
+          $ref: "#/components/schemas/Amount"
+          description: Product total including VAT, in the order currency.
+        vat_amount:
+          $ref: "#/components/schemas/Amount"
+          description: VAT included in the product total; cannot exceed total_amount.
         manufacturer:
           type: string
         model:
@@ -206,8 +214,19 @@ components:
     OrderRequest:
       type: object
       additionalProperties: false
-      required: [order_ref, occurred_at, buyer, seller]
+      required: [order_ref, occurred_at, buyer, seller, currency, total_amount, vat_amount]
       properties:
+        currency:
+          type: string
+          pattern: "^[A-Za-z]{3}$"
+          description: Three-letter currency code, normalized to uppercase.
+          example: SEK
+        total_amount:
+          $ref: "#/components/schemas/Amount"
+          description: Order total including VAT.
+        vat_amount:
+          $ref: "#/components/schemas/Amount"
+          description: VAT included in the order total; cannot exceed total_amount.
         order_ref:
           type: string
           minLength: 1
@@ -223,6 +242,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Product"
+    Amount:
+      type: number
+      minimum: 0
+      maximum: 999999999999999.9999
+      multipleOf: 0.0001
+      description: >
+        Non-negative decimal JSON number with at most 15 integer digits and
+        four decimal places; exponent notation is not accepted.
     ProductAdditionRequest:
       type: object
       additionalProperties: false
