@@ -1,0 +1,5 @@
+Approved clarification — 2026-11-21
+
+- A purchase/order may be registered with zero or more product instances. This
+  follows the krav.txt purchase-event rule and takes precedence for the
+  first implementation over FR-002's minimum-one-product wording.

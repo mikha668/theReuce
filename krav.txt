@@ -1,0 +1,196 @@
+Principer
+Produktens identitet är bunden till GTIN + serienummer, aldrig till ägaren.
+Historiken är append-only: händelser läggs till, inget skrivs över
+Orderintaget är idempotent. Samma order_ref med samma innehåll ger samma svar. Samma order_ref med ändrat innehåll ger 409. Det upprätthålls av unika villkor i databasen inom en och samma transaktion, så det håller även vid samtidiga anrop.
+Produktuppgifterna förutsätts komma från order- eller kassasystemet (kundvagn/POS/ERP), inte från betalningen.
+Affärskra ska skrivas in i businessReq.txt löpande. ändringar av krav i dokuimentet ska godkännas innan de implementeras.
+
+
+Aktörer och objekt i systemet (suggestions, rename if better name or spellcheck)
+
+Party - person or company using the system
+Partner - actor who integrates with the system post/get events or products.
+Owner (role)- the one owning the product purcahsed who the DPP is connected to. Main actor in system
+partyAlias - idnetifier to connect a owner with a buyer in a purchase event
+Buyer (role)- buyer in a purchase event - idnetified by an identifier (could be email, org.no, idnumber, other memberID)
+Seller (role)- seller in a purchase event, idntified by an seller ID
+PurchaseEvent - en event where a sller sells 1...* products to a buyer, the event can contain 0...* products, (products can be added later)
+- a PurchaseEvent is a connector beween, buyer, seller, procucts and documents (for example, recepit)
+Product - is the specifc item purcahsed in an purchase event. can have external documents connected to it (dpp, wrranty etc..) serialnumber, idnumber, type etc..
+DPP - digital product passport (a type of external document)
+GS1 Digital Link - Ett sätt att uttrycka GS1-identifierare, exempelvis GTIN och serienummer, som en webbadresserbar URI.
+Extern document	En digital resurs utanför plattformens kärndomän, exempelvis DPP, garanti, kvitto, manual, certifikat eller återvinningsanvisning.
+
+
+basic functionality version 1:
+•	Registrering av köpare, säljare, köp och fysisk produktinstans.
+•	Koppling mellan köp, produktinstans och ägare.
+•	Stöd för en eller flera externa identifierare per produktinstans.
+•	Stöd för flera resolvertyper, inklusive GS1 Digital Link och generiska HTTPS-baserade lösningar.
+•	Registrering av externa resurser såsom DPP, manual, garanti, kvitto och reparationsinformation.
+•	API-baserad åtkomst för partners samt stöd för asynkrona händelser via webhooks.
+•	Grundläggande behörighet, spårbarhet och revisionslogg.
+
+
+
+icke funktionalle:
+NFR-001	Alla requests ska ha correlation-ID. ID syns i svar och strukturerade loggar.
+NFR-002	API ska ha explicita timeouts.	Test med långsam downstream.
+NFR-003	Webhook-retry ska använda exponentiell backoff med jitter och maxgräns.	Automatiserat test av retry-schema.
+NFR-004	Databasmigrationer ska vara reproducerbara.	Tom databas kan byggas från repot.
+NFR-005	API-kontrakt ska testas mot implementationen.	CI validerar OpenAPI och kontraktstest.
+NFR-006	Health och readiness ska vara separata.	/health visar processliv, /ready beroenden.
+NFR-008	Kod ska ha enhetstester och integrationstester.	Kritiska flöden täcks, inte endast happy path.
+NFR-009	Observability ska omfatta loggar, metrics och senare traces.	POC har strukturerade loggar och grundmetrics.
+NFR-010	Tekniska beslut ska dokumenteras som ADR.	Minst ADR för språk, outbox och monorepo.
+
+Krav finns även i dokumenten Kravspecifikation_Digitalt_Produkt_och_Aganderegister.docx - läs document
+
+
+
+GUI.
+Admin, översikt, skapa partners, generera en id-nyckel, skapa party 
+party login, see my purchases and products (product is main focus) purchase is connected to product
+swagger or similrar, to post event to partner api.
+
+
+
+
+Förslag på Teknisk lösning: (men ändra och föreslå gärna bättre lölsningar)
+
+
+
+
+förslagen arkitektur (kan använda enklare sql om det är bättre för poc)
+                    ┌──────────────────┐
+                    │ React/TypeScript │
+                    │    Frontend      │
+                    └────────┬─────────┘
+                             │
+                             ▼
+Partners                 ┌──────────┐
+──────── HTTPS/API ─────►│  Go API  │
+──────── HTTPS/API ─────►│          │
+──────── HTTPS/API ─────►│          │
+                         └────┬─────┘
+                              │
+                              ▼
+                         PostgreSQL
+
+
+skilja på
+/api/v1/...                 Frontend/API
+/partner/v1/...             Externa partners
+
+partner apis needed - post purchase event / update purchase event / get purchase event/status/info... and i guess more is needed.
+
+
+tänkkt flöde i poc
+Partner
+  │
+  │ POST /partner/v1/orders
+  │ Idempotency-Key: 847293...
+  ▼
+Go API
+  │
+  ├── Authenticate partner
+  ├── Authorize request
+  ├── Validate payload
+  ├── Check idempotency
+  ├── Execute transaction
+  ├── Audit
+  │
+  ▼
+PostgreSQL
+
+Frontend:React + TypeScript
+Backend: Go
+API definition: OpenAPI 3.x
+Database: PostgreSQL (eller enklar esql bara för att det är en POC-föreslå, ska ändå klara en viss volym)
+Source: GitHub monorepo
+Objektlagring	S3-kompatibelt, om filer behövs	(i poc kankse lagra lokalt i folder bara)
+
+princip för applikationen:
+Jag vet vilken fysisk produkt detta är och vem som äger den. Jag vet också var externa informationskällor för produkten finns."
+
+ProductInstance
+      │
+      ├── ExternalResource
+      │       type = DPP
+      │       uri = ...
+      │
+      ├── ExternalResource
+      │       type = MANUAL
+      │       uri = ...
+      │
+      ├── ExternalResource
+      │       type = WARRANTY
+      │       uri = ...
+      │
+      └── ExternalResource
+              type = REPAIR
+              uri = ...
+
+
+ProductInstance
+│
+├── internal_product_id
+├── manufacturer
+├── model
+├── serial_number
+│
+└── external_identifiers
+        │
+        ├── type: GS1_DIGITAL_LINK
+        │   identifier: GTIN + serial
+        │   resolver_url: https://...
+        │
+        ├── type: DPP_URI
+        │   identifier: ...
+        │   resolver_url: https://...
+        │
+        └── type: OTHER
+            identifier: ...
+            resolver_url: https://...
+
+    
+
+adapters
+                  ProductInstance
+                        │
+                  ResourceResolver
+                        │
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+   GS1 Adapter      HTTP Adapter    Future adapter
+        │               │               │
+        ▼               ▼               ▼
+ GS1 Resolver     Other DPP       New standard
+
+
+
+Framtida saker att tänka på (behöver ej implemnteras från start)
+webhooks
+
+OAuth 2.0 / OIDC
+eventuellt mTLS för partneranslutningar
+JWT-validering
+rate limiting
+idempotency keys
+request validation
+audit logging
+timeouts
+retries
+concurrency
+OpenAPI-specifikation
+strukturerad logging
+senare event publishing till Kafka
+
+
+från agent
+Jag föreslår följande ordning för nästa steg:
+
+Säkerställ produktidentitet med GTIN och serienummer.
+Verifiera orderintag och samtidighet mot PostgreSQL.
+Bygg produktöversikt, ägarinloggning och ägaröverföring.
+Lägg till resolver-adaptrar och signerade webhooks.

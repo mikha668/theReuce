@@ -1,0 +1,277 @@
+openapi: 3.1.0
+info:
+  title: Product and Ownership Register Partner API
+  version: 1.0.0
+  description: Partner endpoints for registering purchases and physical product instances.
+servers:
+  - url: /
+security:
+  - PartnerBearerAuth: []
+paths:
+  /health:
+    get:
+      security: []
+      summary: Check process liveness
+      responses:
+        "200":
+          description: The API process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    const: ok
+  /ready:
+    get:
+      security: []
+      summary: Check database readiness
+      responses:
+        "200":
+          description: The database is available.
+        "503":
+          $ref: "#/components/responses/Problem"
+  /partner/v1/orders:
+    post:
+      summary: Register an order
+      description: >
+        Repeating a partner order_ref with equivalent content returns the original
+        response. Reusing it with different content returns 409. An order may have
+        zero products; attach products later with a separate event_ref.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderRequest"
+      responses:
+        "202":
+          description: The order was recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /partner/v1/orders/{order_ref}/products:
+    post:
+      summary: Attach products to an existing order
+      parameters:
+        - name: order_ref
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 200
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductAdditionRequest"
+      responses:
+        "202":
+          description: The products were recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+components:
+  securitySchemes:
+    PartnerBearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  headers:
+    CorrelationId:
+      description: Correlation identifier for this request.
+      schema:
+        type: string
+  responses:
+    Problem:
+      description: Request could not be completed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Party:
+      type: object
+      additionalProperties: false
+      required: [external_id, type]
+      properties:
+        external_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Partner-scoped identifier; stored as a keyed hash.
+        type:
+          type: string
+          enum: [PERSON, ORGANIZATION, UNKNOWN]
+    Identifier:
+      type: object
+      additionalProperties: false
+      required: [scheme, value]
+      properties:
+        scheme:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        value:
+          type: string
+          minLength: 1
+          maxLength: 512
+        qualifiers:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 512
+    ExternalResource:
+      type: object
+      additionalProperties: false
+      required: [type, uri, access_level, resolver_type]
+      properties:
+        type:
+          type: string
+          enum: [DPP, MANUAL, WARRANTY, RECEIPT, REPAIR, CERTIFICATE, OTHER]
+        uri:
+          type: string
+          format: uri
+          pattern: "^https://"
+        media_type:
+          type: string
+        language:
+          type: string
+        access_level:
+          type: string
+          enum: [PUBLIC, OWNER, ROLE_RESTRICTED]
+        resolver_type:
+          type: string
+          enum: [GS1_DIGITAL_LINK, DIRECT_HTTPS, STATIC_MAPPING, VENDOR_API]
+    Product:
+      type: object
+      additionalProperties: false
+      required: [identifiers]
+      properties:
+        manufacturer:
+          type: string
+        model:
+          type: string
+        identifiers:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Identifier"
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExternalResource"
+    OrderRequest:
+      type: object
+      additionalProperties: false
+      required: [order_ref, occurred_at, buyer, seller]
+      properties:
+        order_ref:
+          type: string
+          minLength: 1
+          maxLength: 200
+        occurred_at:
+          type: string
+          format: date-time
+        buyer:
+          $ref: "#/components/schemas/Party"
+        seller:
+          $ref: "#/components/schemas/Party"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+    ProductAdditionRequest:
+      type: object
+      additionalProperties: false
+      required: [event_ref, products]
+      properties:
+        event_ref:
+          type: string
+          minLength: 1
+          maxLength: 200
+        products:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Product"
+    ProductResult:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+    OrderResponse:
+      type: object
+      required: [event_id, status, order_ref, received_at, products]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        status:
+          const: accepted
+        order_ref:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductResult"
+    Problem:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
