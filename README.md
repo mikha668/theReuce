@@ -39,6 +39,8 @@ In the admin party form, enter comma-separated party aliases. Select a party in 
 
 The API console supplies an editable JSON template for each partner POST endpoint and lists required and optional fields. The order timestamp is prefilled with the current time; change it to the event's actual time. Products may be omitted or empty when creating an order, but adding products requires at least one product. Resources may be omitted or empty. See [the partner API guide](docs/partner-api.md) for complete examples and amount rules.
 
+For an overview of the database tables and relationships, see the [database model](docs/database-model.md). For the screens, data flows, code structure and build instructions, see [How the application works](docs/application-guide.md).
+
 ## Partner API
 
 Authenticate with `Authorization: Bearer <partner API key>`. Keys generated when creating a partner in the admin screen authenticate as that partner. The configured `PARTNER_API_KEY` and `PARTNER_ID` continue to work as a local fallback.

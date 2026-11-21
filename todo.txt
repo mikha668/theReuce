@@ -1,4 +1,9 @@
 move the API consoe to another app (not in the same as amdin/myaccount)
 move send request button to above the request fields
+type is not needed for the buyer ands seller for api
+two decimals for amounts
+in admin show purchases
+log file for requests and Posts 
+get commande status for an order, (list produkctregistred)
 
 
