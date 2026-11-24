@@ -65,6 +65,18 @@ The database stores money as `NUMERIC(19,4)`. For new orders, the API checks non
 
 The requested GTIN-plus-serial identity rule is **not enforced** yet. The implementation currently finds/reuses a product using the stored identifier tuples, rather than enforcing that specific combination.
 
+### Registration provenance
+
+For new partner submissions, `product_instances` and `product_identifiers`
+record the registering partner and correlation ID alongside their existing
+creation time. `purchase_products` records its registration time, partner and
+correlation ID; `ownership_events` records the partner and correlation ID;
+and `external_resources` records the correlation ID alongside its existing
+source partner and creation time. The actor is the authenticated **partner**,
+not an individual user or credential. Older rows retain null values where this
+information was not recorded; migration does not invent an actor or time.
+The existing partner-local ownership events are not approved ownership stamps.
+
 ## Operational tables
 
 | Table | Purpose |
@@ -75,6 +87,6 @@ The requested GTIN-plus-serial identity rule is **not enforced** yet. The implem
 
 ## Schema sources
 
-The schema is defined by the ordered SQL migrations in [`internal/migrate`](../internal/migrate/). In order, they create the initial register, partners, profile/legacy aliases, independent profile aliases, and order amounts. The migration runner records applied files and runs each new migration in a transaction.
+The schema is defined by the ordered SQL migrations in [`internal/migrate`](../internal/migrate/). In order, they create the initial register, partners, profile/legacy aliases, independent profile aliases, order amounts, and registration provenance. The migration runner records applied files and runs each new migration in a transaction.
 
 For application behavior, see [How the application works](application-guide.md). For request fields and examples, see the [partner API guide](partner-api.md).

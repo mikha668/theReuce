@@ -5,6 +5,7 @@ This repository starts with the partner-facing Go API and PostgreSQL schema. The
 An order may start with no products. Products can be attached later using a separate event reference, so retrying the original `order_ref` with changed content remains a `409 Conflict`.
 
 ## Requirements
+ 
 
 - Go 1.23 or later
 - PostgreSQL 13 or later

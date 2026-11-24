@@ -47,6 +47,43 @@ func TestRequestLoggingUsesRouteTemplateWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestAcceptedOrderLogsEventWithoutRequestData(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	handler := NewServer(nil, &fakeOrderService{}, "test-secret", "partner-1", logger)
+	body := `{"order_ref":"private-order","occurred_at":"2026-11-21T12:00:00Z","buyer":{"external_id":"private-buyer","type":"PERSON"},"seller":{"external_id":"private-seller","type":"ORGANIZATION"}}`
+	request := httptest.NewRequest(http.MethodPost, "/partner/v1/orders", strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer test-secret")
+	request.Header.Set("X-Correlation-ID", "trace-event")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	decoder := json.NewDecoder(&logs)
+	var event map[string]any
+	if err := decoder.Decode(&event); err != nil {
+		t.Fatal(err)
+	}
+	if event["operation"] != "purchase.registered" || event["event_id"] != "event-1" ||
+		event["partner_id"] != "partner-1" || event["correlation_id"] != "trace-event" {
+		t.Fatalf("unexpected event log: %#v", event)
+	}
+	var requestLog map[string]any
+	if err := decoder.Decode(&requestLog); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal([]map[string]any{event, requestLog})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"private-order", "private-buyer", "private-seller", "test-secret"} {
+		if bytes.Contains(encoded, []byte(secret)) {
+			t.Fatalf("logs contain %q", secret)
+		}
+	}
+}
+
 func (s *fakeOrderService) CreateOrder(_ context.Context, _ string, request orders.Request, _ [32]byte, _ string) (orders.Response, error) {
 	s.createCalls++
 	return orders.Response{

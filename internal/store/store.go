@@ -116,7 +116,7 @@ func (s *Store) CreateOrder(ctx context.Context, partnerID string, request order
 		Products:   make([]orders.ProductResult, 0, len(request.Products)),
 	}
 	for _, product := range request.Products {
-		productID, err := s.addProduct(ctx, tx, partnerID, eventID, buyerID, product)
+		productID, err := s.addProduct(ctx, tx, partnerID, eventID, buyerID, correlationID, product)
 		if err != nil {
 			return orders.Response{}, err
 		}
@@ -220,7 +220,7 @@ func (s *Store) AddProducts(ctx context.Context, partnerID, orderRef, eventRef s
 		Products:   make([]orders.ProductResult, 0, len(products)),
 	}
 	for _, product := range products {
-		productID, err := s.addProduct(ctx, tx, partnerID, eventID, buyerID, product)
+		productID, err := s.addProduct(ctx, tx, partnerID, eventID, buyerID, correlationID, product)
 		if err != nil {
 			return orders.Response{}, err
 		}
@@ -251,7 +251,7 @@ func (s *Store) AddProducts(ctx context.Context, partnerID, orderRef, eventRef s
 	return response, nil
 }
 
-func (s *Store) addProduct(ctx context.Context, tx *sql.Tx, partnerID, purchaseEventID, buyerID string, product orders.Product) (string, error) {
+func (s *Store) addProduct(ctx context.Context, tx *sql.Tx, partnerID, purchaseEventID, buyerID, correlationID string, product orders.Product) (string, error) {
 	var productID string
 	for _, identifier := range product.Identifiers {
 		qualifiers, err := json.Marshal(identifier.Qualifiers)
@@ -276,9 +276,9 @@ func (s *Store) addProduct(ctx context.Context, tx *sql.Tx, partnerID, purchaseE
 
 	if productID == "" {
 		if err := tx.QueryRowContext(ctx, `
-			INSERT INTO product_instances (manufacturer, model)
-			VALUES ($1, $2) RETURNING id`,
-			product.Manufacturer, product.Model,
+			INSERT INTO product_instances (manufacturer, model, registered_by_partner_id, registration_correlation_id)
+			VALUES ($1, $2, $3, $4) RETURNING id`,
+			product.Manufacturer, product.Model, partnerID, correlationID,
 		).Scan(&productID); err != nil {
 			return "", fmt.Errorf("create product instance: %w", err)
 		}
@@ -290,10 +290,10 @@ func (s *Store) addProduct(ctx context.Context, tx *sql.Tx, partnerID, purchaseE
 			return "", fmt.Errorf("encode identifier qualifiers: %w", err)
 		}
 		result, err := tx.ExecContext(ctx, `
-			INSERT INTO product_identifiers (product_instance_id, scheme, value, qualifiers)
-			VALUES ($1, $2, $3, $4::jsonb)
+			INSERT INTO product_identifiers (product_instance_id, scheme, value, qualifiers, registered_by_partner_id, registration_correlation_id)
+			VALUES ($1, $2, $3, $4::jsonb, $5, $6)
 			ON CONFLICT (scheme, value, qualifiers) DO NOTHING`,
-			productID, identifier.Scheme, identifier.Value, string(qualifiers),
+			productID, identifier.Scheme, identifier.Value, string(qualifiers), partnerID, correlationID,
 		)
 		if err != nil {
 			return "", fmt.Errorf("save product identifier: %w", err)
@@ -318,9 +318,10 @@ func (s *Store) addProduct(ctx context.Context, tx *sql.Tx, partnerID, purchaseE
 	}
 
 	result, err := tx.ExecContext(ctx, `
-		INSERT INTO purchase_products (purchase_event_id, product_instance_id, total_amount, vat_amount)
-		VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-		purchaseEventID, productID, product.TotalAmount, product.VATAmount,
+		INSERT INTO purchase_products
+			(purchase_event_id, product_instance_id, total_amount, vat_amount, registered_at, registered_by_partner_id, registration_correlation_id)
+		VALUES ($1, $2, $3, $4, now(), $5, $6) ON CONFLICT DO NOTHING`,
+		purchaseEventID, productID, product.TotalAmount, product.VATAmount, partnerID, correlationID,
 	)
 	if err != nil {
 		return "", fmt.Errorf("link product to purchase: %w", err)
@@ -347,20 +348,20 @@ func (s *Store) addProduct(ctx context.Context, tx *sql.Tx, partnerID, purchaseE
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO ownership_events
-			(product_instance_id, owner_party_id, source_purchase_event_id, event_type, sequence)
-		VALUES ($1, $2, $3, 'PURCHASED', $4)
+			(product_instance_id, owner_party_id, source_purchase_event_id, event_type, sequence, registered_by_partner_id, registration_correlation_id)
+		VALUES ($1, $2, $3, 'PURCHASED', $4, $5, $6)
 		ON CONFLICT (product_instance_id, source_purchase_event_id) DO NOTHING`,
-		productID, buyerID, purchaseEventID, nextOwnershipSequence,
+		productID, buyerID, purchaseEventID, nextOwnershipSequence, partnerID, correlationID,
 	); err != nil {
 		return "", fmt.Errorf("record product ownership: %w", err)
 	}
 	for _, resource := range product.Resources {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO external_resources
-				(product_instance_id, resource_type, uri, media_type, language, access_level, resolver_type, source_partner_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				(product_instance_id, resource_type, uri, media_type, language, access_level, resolver_type, source_partner_id, registration_correlation_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 			productID, resource.Type, resource.URI, nullIfEmpty(resource.MediaType),
-			nullIfEmpty(resource.Language), resource.AccessLevel, resource.Resolver, partnerID,
+			nullIfEmpty(resource.Language), resource.AccessLevel, resource.Resolver, partnerID, correlationID,
 		); err != nil {
 			return "", fmt.Errorf("save external resource: %w", err)
 		}

@@ -773,6 +773,12 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err)
 		return
 	}
+	s.logger.InfoContext(r.Context(), "order operation accepted",
+		slog.String("operation", "purchase.registered"),
+		slog.String("partner_id", authenticatedPartnerID(r.Context())),
+		slog.String("event_id", response.EventID),
+		slog.String("correlation_id", correlationID(r.Context())),
+	)
 	writeJSON(w, http.StatusAccepted, response)
 }
 
@@ -798,6 +804,12 @@ func (s *Server) addProducts(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err)
 		return
 	}
+	s.logger.InfoContext(r.Context(), "order operation accepted",
+		slog.String("operation", "purchase.products_added"),
+		slog.String("partner_id", authenticatedPartnerID(r.Context())),
+		slog.String("event_id", response.EventID),
+		slog.String("correlation_id", correlationID(r.Context())),
+	)
 	writeJSON(w, http.StatusAccepted, response)
 }
 

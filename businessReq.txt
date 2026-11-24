@@ -3,3 +3,13 @@ Approved clarification — 2026-11-21
 - A purchase/order may be registered with zero or more product instances. This
   follows the krav.txt purchase-event rule and takes precedence for the
   first implementation over FR-002's minimum-one-product wording.
+
+Approved clarification — 2026-11-24
+
+- An approved initial assignment records the canonical internal party ID on
+  the physical product. A reported buyer reference or an alias is not an
+  ownership stamp. A saved approval must not change when aliases are edited.
+- Startup, login, reads and ordinary partner submissions must not transfer an
+  existing ownership stamp. Transfer, return or correction requires a
+  separate authorized operation with history.
+- A purchase may still have zero order lines and zero product instances.

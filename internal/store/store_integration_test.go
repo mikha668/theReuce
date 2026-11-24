@@ -218,6 +218,59 @@ func TestAddProductsIsIdempotentAndRetainsProductIdentity(t *testing.T) {
 	}
 }
 
+func TestProductRegistrationProvenance(t *testing.T) {
+	db := openTestDatabase(t)
+	store := New(db, []byte(strings.Repeat("h", 32)))
+	ctx := context.Background()
+	order, orderHash := decodeTestOrder(t, `{
+		"order_ref":"provenance-order",
+		"occurred_at":"2026-11-21T12:00:00Z",
+		"buyer":{"external_id":"buyer","type":"PERSON"},
+		"seller":{"external_id":"seller","type":"ORGANIZATION"}
+	}`)
+	purchase, err := store.CreateOrder(ctx, "partner-test", order, orderHash, "order-correlation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	products, productHash := decodeTestProducts(t, `{
+		"event_ref":"provenance-addition",
+		"products":[{
+			"identifiers":[{"scheme":"serial","value":"provenance-serial"}],
+			"resources":[{"type":"DPP","uri":"https://example.com/dpp","access_level":"OWNER","resolver_type":"DIRECT_HTTPS"}]
+		}]
+	}`)
+	addition, err := store.AddProducts(ctx, "partner-test", order.OrderRef, "provenance-addition", products, productHash, "addition-correlation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	productID := addition.Products[0].ID
+	for name, query := range map[string]string{
+		"product":    `SELECT registered_by_partner_id, registration_correlation_id FROM product_instances WHERE id = $1 AND created_at IS NOT NULL`,
+		"identifier": `SELECT registered_by_partner_id, registration_correlation_id FROM product_identifiers WHERE product_instance_id = $1 AND created_at IS NOT NULL`,
+		"link":       `SELECT registered_by_partner_id, registration_correlation_id FROM purchase_products WHERE product_instance_id = $1 AND registered_at IS NOT NULL`,
+		"ownership":  `SELECT registered_by_partner_id, registration_correlation_id FROM ownership_events WHERE product_instance_id = $1 AND created_at IS NOT NULL`,
+		"resource":   `SELECT source_partner_id, registration_correlation_id FROM external_resources WHERE product_instance_id = $1 AND created_at IS NOT NULL`,
+	} {
+		var actor, correlation string
+		if err := db.QueryRowContext(ctx, query, productID).Scan(&actor, &correlation); err != nil {
+			t.Fatalf("%s provenance: %v", name, err)
+		}
+		if actor != "partner-test" || correlation != "addition-correlation" {
+			t.Errorf("%s provenance = %q, %q", name, actor, correlation)
+		}
+	}
+	if _, err := store.AddProducts(ctx, "partner-test", order.OrderRef, "provenance-addition", products, productHash, "retry-correlation"); err != nil {
+		t.Fatal(err)
+	}
+	var correlation string
+	if err := db.QueryRowContext(ctx, `SELECT registration_correlation_id FROM purchase_products WHERE purchase_event_id = $1`, purchase.EventID).Scan(&correlation); err != nil {
+		t.Fatal(err)
+	}
+	if correlation != "addition-correlation" {
+		t.Fatalf("retry changed provenance: %q", correlation)
+	}
+}
+
 func TestProductIdentitySurvivesOwnershipChange(t *testing.T) {
 	db := openTestDatabase(t)
 	store := New(db, []byte(strings.Repeat("h", 32)))

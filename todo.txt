@@ -1,3 +1,16 @@
+Refaktoreringen är inte färdig. Jag har påbörjat den med:
+
+En migration för registreringstid, ansvarig partner och korrelations-ID för produktuppgifter. Äldre rader får inga påhittade värden.
+Konsolloggning av accepterade orderhändelser utan begäransdata eller credentials.
+Ett daterat ägarförtydligande i businessReq.txt.
+Kvarstår: godkänd köparkoppling och låst ägarstämpel, behörigheter, API- och UI-flöden, privat kvittolagring samt övriga delar av specifikationen. Den nuvarande admin- och partytan är fortfarande oskyddad och ska inte användas med riktiga personuppgifter eller exponeras mot opålitliga nätverk.
+
+Verifiering: frontendens bygge och lint samt go vet passerade. Migrationen provades mot en separat PostgreSQL-databas med äldre data. Go-testerna kunde inte köras fullt ut eftersom Windows nekade åtkomst till flera genererade testprogram. Acceptanstesterna A01–A10 är därför inte verifierade.
+
+
+
+
+Not now, implement later!
 move the API consoe to another app (not in the same as amdin/myaccount)
 move send request button to above the request fields
 type is not needed for the buyer ands seller for api

@@ -24,6 +24,11 @@ flowchart LR
 3. The **Go API** authenticates partner requests, validates JSON, executes business rules and reads/writes PostgreSQL.
 4. **PostgreSQL** stores profiles, purchase events, product data, ownership events, audit and outbox records. The migration command updates its schema separately; starting the API does not apply migrations.
 
+Accepted order and product-addition operations are also logged in the API
+terminal with their event ID, authenticated partner and correlation ID.
+An idempotent retry produces another operation log but does not create another
+database event. Request bodies, buyer references and credentials are not logged.
+
 The Go API does not serve the built React files. `npm run build` produces frontend files under `frontend/dist`; a production hosting/proxy setup is not included.
 
 ## What each screen does
